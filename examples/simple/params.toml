@@ -1,6 +1,5 @@
 [params]
 topic = "arcsiris as being awesome"
-somenum = 42
 
 
 [openai]

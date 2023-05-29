@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -34,33 +35,38 @@ type ParamsFile struct {
 	}
 }
 
-func execArcSiris() error {
-	if len(os.Args) < 2 {
-		return fmt.Errorf("Usage: %s <foldername>", os.Args[0])
-	}
-
-	foldername := os.Args[1]
-
+func arcsiris(foldername string) error {
 	dir, err := os.ReadDir(foldername)
 	if err != nil {
 		return err
 	}
 
 	var params ParamsFile
+	var foundParams bool
 	var templateFile string
+	var foundTemplate bool
 	for _, file := range dir {
 		if file.Name() == "params.toml" {
 			_, err := toml.DecodeFile(foldername+"/"+file.Name(), &params)
 			if err != nil {
 				return err
 			}
+			foundParams = true
 		} else if file.Name() == "template.txt" {
 			f, err := os.ReadFile(foldername + "/" + file.Name())
 			if err != nil {
 				return err
 			}
 			templateFile = string(f)
+			foundTemplate = true
 		}
+	}
+
+	if !foundParams {
+		return fmt.Errorf("params.toml not found")
+	}
+	if !foundTemplate {
+		return fmt.Errorf("template.txt not found")
 	}
 
 	for k, v := range params.Params {
@@ -110,7 +116,12 @@ func execArcSiris() error {
 }
 
 func main() {
-	if err := execArcSiris(); err != nil {
-		panic(err)
+	if len(os.Args) < 2 {
+		log.Fatalf("Usage: %s <foldername>", os.Args[0])
+	}
+
+	foldername := os.Args[1]
+	if err := arcsiris(foldername); err != nil {
+		log.Fatal(err)
 	}
 }
