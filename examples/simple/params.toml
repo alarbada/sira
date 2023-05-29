@@ -1,0 +1,8 @@
+[params]
+topic = "arcsiris as being awesome"
+somenum = 42
+
+
+[openai]
+model = "gpt-3.5-turbo"
+
