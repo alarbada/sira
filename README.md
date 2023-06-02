@@ -12,3 +12,4 @@ TODO:
 - default directory?
 - init folder
 - save conversation inside a file. When running arcsiris with something like a "continue" argument, it continues the conversation.
+- add hability to comment parts of the prompt

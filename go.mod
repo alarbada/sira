@@ -1,4 +1,4 @@
-module arcsiris
+module sira
 
 go 1.20
 
