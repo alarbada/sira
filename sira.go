@@ -203,17 +203,33 @@ func sira(foldername string) error {
 	}
 	defer stream.Close()
 
+	newMessage := openai.ChatCompletionMessage{
+		Role:    "assistant",
+		Content: "",
+		Name:    "",
+	}
+
 	for {
 		resp, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			fmt.Println()
-			return nil
+			break
 		} else if err != nil {
 			return err
 		}
 
+		newMessage.Content += resp.Choices[0].Delta.Content
 		fmt.Printf("%s", resp.Choices[0].Delta.Content)
 	}
+
+	messages = append(messages, newMessage)
+
+	var newContents string
+	for _, message := range messages {
+		newContents += `[` + message.Role + "]\n" + message.Content + "\n\n"
+	}
+
+	return os.WriteFile(foldername+"/template.txt", []byte(newContents), 0644)
 }
 
 func main() {

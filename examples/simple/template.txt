@@ -1,2 +1,27 @@
 [assistant]
-Write a haiku about your favorite {topic}.
+Write a haiku about your favorite arcsiris as being awesome.
+
+[user]
+lol
+
+[assistant]
+Here's a haiku about the awesomeness of the aurora borealis:
+
+Colors fill the sky,
+Northern lights dancing above,
+Nature's grand display.
+
+[assistant]
+Oops! I misread the prompt. Here's a new haiku about your favorite "arcsiris" being awesome:
+
+Electricity flows,
+Arches of light in the sky,
+Arcsiris, divine.
+
+[assistant]
+Oops, it seems I made a typo again! The correct term is "auroras". Here's a new haiku for your favorite aurora being awesome:
+
+Silent night awakes,
+Aurora paints the dark skies,
+Magical beauty.
+
