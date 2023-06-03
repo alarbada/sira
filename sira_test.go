@@ -6,6 +6,8 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
+// TODO: This doesn't pass yet, make it so
+
 func TestParseMessages(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
 		messages, err := parseTemplate(`[assistant]

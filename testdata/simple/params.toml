@@ -1,6 +1,5 @@
 [params]
-topic = "arcsiris as being awesome"
-
+topic = "food"
 
 [openai]
 model = "gpt-3.5-turbo"
