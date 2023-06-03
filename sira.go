@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -232,13 +233,48 @@ func sira(foldername string) error {
 	return os.WriteFile(foldername+"/template.txt", []byte(newContents), 0644)
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Fatalf("Usage: %s <foldername>", os.Args[0])
+func startTemplate(dir string) error {
+	if err := os.Mkdir(dir, 0755); err != nil {
+		return err
 	}
 
-	foldername := os.Args[1]
-	if err := sira(foldername); err != nil {
-		log.Fatal(err)
+	paramsTemplate := `[params]
+
+
+[openai]
+model = "gpt-3.5-turbo"
+temperature = 0.7
+max_tokens = 500
+`
+
+	err := os.WriteFile(dir+"/params.toml", []byte(paramsTemplate), 0644)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(dir+"/template.txt", []byte(`[system]`), 0644)
+}
+
+var (
+	initFlag = flag.String("init", "", "Directory to init prompts in")
+	execFlag = flag.String("exec", "", "Directory to execute prompts in")
+)
+
+func main() {
+	flag.Parse()
+
+	switch {
+	case *initFlag != "" && *execFlag != "":
+		log.Fatal("Cannot use both -init and -exec")
+	case *initFlag != "":
+		if err := startTemplate(*initFlag); err != nil {
+			log.Fatal(err)
+		}
+	case *execFlag != "":
+		if err := sira(*execFlag); err != nil {
+			log.Fatal(err)
+		}
+	default:
+		log.Fatal("Must use either -init or -exec")
 	}
 }
