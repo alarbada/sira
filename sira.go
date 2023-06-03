@@ -47,9 +47,12 @@ func stringMatches(index int, substr, content string) bool {
 type TokenKind string
 
 const (
-	TokenKind_System    TokenKind = "[system]"
-	TokenKind_Assistant TokenKind = "[assistant]"
-	TokenKind_User      TokenKind = "[user]"
+	TokenKind_System     TokenKind = "[system]"
+	TokenKind_Assistant  TokenKind = "[assistant]"
+	TokenKind_User       TokenKind = "[user]"
+	TokenKind_CurlyStart TokenKind = "{"
+	TokenKind_CurlyEnd   TokenKind = "}"
+	TokenKind_Comment    TokenKind = ">>>"
 )
 
 func (this TokenKind) ToRole() string {
@@ -68,6 +71,17 @@ func (this TokenKind) ToRole() string {
 type Token struct {
 	Kind TokenKind
 	Pos  int
+}
+
+type TokenizerState uint8
+
+const (
+	TokenizerState_ParseRole TokenizerState = iota
+	TokenizerState_ParseContent
+)
+
+type Tokenizer struct {
+	State TokenizerState
 }
 
 func tokenize(rawTemplate string) []Token {
@@ -148,10 +162,10 @@ func parseTemplate(template string, params map[string]any) ([]openai.ChatComplet
 	return messages, nil
 }
 
-func sira(foldername string) error {
+func parseMessages(foldername string) (*ParamsFile, []openai.ChatCompletionMessage, error) {
 	dir, err := os.ReadDir(foldername)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	var params ParamsFile
@@ -162,13 +176,13 @@ func sira(foldername string) error {
 		if file.Name() == "params.toml" {
 			_, err := toml.DecodeFile(foldername+"/"+file.Name(), &params)
 			if err != nil {
-				return err
+				return nil, nil, err
 			}
 			foundParams = true
-		} else if file.Name() == "template.txt" {
+		} else if file.Name() == "template.md" {
 			f, err := os.ReadFile(foldername + "/" + file.Name())
 			if err != nil {
-				return err
+				return nil, nil, err
 			}
 			templateFile = string(f)
 			foundTemplate = true
@@ -176,17 +190,21 @@ func sira(foldername string) error {
 	}
 
 	if !foundParams {
-		return fmt.Errorf("params.toml not found")
+		return nil, nil, fmt.Errorf("params.toml not found")
 	}
 	if !foundTemplate {
-		return fmt.Errorf("template.txt not found")
+		return nil, nil, fmt.Errorf("template.md not found")
 	}
 
 	messages, err := parseTemplate(templateFile, params.Params)
 	if err != nil {
-		return fmt.Errorf("Failed to parse template: %w", err)
+		return nil, nil, fmt.Errorf("Failed to parse template: %w", err)
 	}
 
+	return &params, messages, nil
+}
+
+func execPrompt(params *ParamsFile, messages []openai.ChatCompletionMessage) (string, error) {
 	key := readKey()
 	client := openai.NewClient(key)
 
@@ -200,7 +218,7 @@ func sira(foldername string) error {
 
 	stream, err := client.CreateChatCompletionStream(context.Background(), req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer stream.Close()
 
@@ -216,7 +234,7 @@ func sira(foldername string) error {
 			fmt.Println()
 			break
 		} else if err != nil {
-			return err
+			return "", err
 		}
 
 		newMessage.Content += resp.Choices[0].Delta.Content
@@ -230,7 +248,7 @@ func sira(foldername string) error {
 		newContents += `[` + message.Role + "]\n" + message.Content + "\n\n"
 	}
 
-	return os.WriteFile(foldername+"/template.txt", []byte(newContents), 0644)
+	return newContents, nil
 }
 
 func startTemplate(dir string) error {
@@ -252,7 +270,7 @@ max_tokens = 500
 		return err
 	}
 
-	return os.WriteFile(dir+"/template.txt", []byte(`[system]`), 0644)
+	return os.WriteFile(dir+"/template.md", []byte(`[system]`), 0644)
 }
 
 var (
@@ -271,7 +289,18 @@ func main() {
 			log.Fatal(err)
 		}
 	case *execFlag != "":
-		if err := sira(*execFlag); err != nil {
+		folderName := *execFlag
+		params, messages, err := parseMessages(folderName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		newTemplate, err := execPrompt(params, messages)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = os.WriteFile(folderName+"/template.md", []byte(newTemplate), 0644)
+		if err != nil {
 			log.Fatal(err)
 		}
 	default:
