@@ -3,55 +3,27 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/sashabaranov/go-openai"
 )
 
 type Message = openai.ChatCompletionMessage
 
-func readKey() string {
-	// read ~/.sira
-	f, err := os.ReadFile(os.Getenv("HOME") + "/.sira")
-	if err != nil {
-		panic(err)
-	}
-
-	// OPENAI_API_KEY=sk-...
-	key := strings.Split(string(f), "=")[1]
-
-	return strings.TrimSpace(key)
-}
-
 func execPrompt(params *ParamsFile, messages []Message) (*Message, error) {
-	key := readKey()
-	client := openai.NewClient(key)
+	client := openai.NewClient(params.Apikey)
 
-	req := openai.ChatCompletionRequest{
-		Model:       params.OpenAI.Model,
-		MaxTokens:   params.OpenAI.MaxTokens,
-		Temperature: params.OpenAI.Temperature,
-		Messages:    messages,
-		Stream:      true,
-	}
-
-	stream, err := client.CreateChatCompletionStream(context.Background(), req)
+	stream, err := client.CreateChatCompletionStream(context.Background(), params.OpenAI)
 	if err != nil {
 		return nil, err
 	}
 	defer stream.Close()
 
-	newMessage := Message{
-		Role:    "assistant",
-		Content: "",
-		Name:    "",
-	}
+	var newMessage Message
+	newMessage.Role = "assistant"
 
 	for {
 		resp, err := stream.Recv()
@@ -81,16 +53,21 @@ func appendMessage(filename string, message Message) error {
 	if err != nil {
 		return err
 	}
-	
+
 	chars := []rune(string(contents))
 	lastChar := chars[len(chars)-1]
 
 	start := "\n\n"
 	if lastChar == '\n' {
-		start = ""
+		start = "\n"
 	}
 
-	_, err = f.WriteString(fmt.Sprintf("%v%v\n%s", start, TokenKind_Assistant, message.Content))
+	toBeAppended := fmt.Sprintf(
+		"%v%v\n%s\n\n%v\n\n",
+		start, TokenKind_Assistant, message.Content, TokenKind_User,
+	)
+
+	_, err = f.WriteString(toBeAppended)
 	return err
 }
 
@@ -116,45 +93,35 @@ max_tokens = 500
 	return os.WriteFile(dir+"/template.md", []byte(TokenKind_System), 0644)
 }
 
-var (
-	initFlag = flag.String("init", "", "Directory to init prompts in")
-	execFlag = flag.String("exec", "", "Directory to execute prompts in")
-)
-
-func handleErr(err error) {
-	// disable date on log
-	log.SetFlags(0)
-	log.Fatalf("Error: %v", err)
+func handleMainErr(err error) {
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 }
 
 func main() {
-	flag.Parse()
+	// disable date on log
+	log.SetFlags(0)
 
-	switch {
-	case *initFlag != "" && *execFlag != "":
-		log.Fatal("Cannot use both -init and -exec")
-	case *initFlag != "":
-		if err := startTemplate(*initFlag); err != nil {
-			handleErr(err)
-		}
-	case *execFlag != "":
-		folderName := *execFlag
-		params, messages, err := parseMessages(folderName)
-		if err != nil {
-			handleErr(err)
-		}
-
-		newMessage, err := execPrompt(params, messages)
-		if err != nil {
-			handleErr(err)
-		}
-
-		templateFilename := filepath.Join(folderName, "template.md")
-		err = appendMessage(templateFilename, *newMessage)
-		if err != nil {
-			handleErr(err)
-		}
-	default:
-		handleErr(errors.New("Must use either -init or -exec"))
+	params, err := parseParamsFile()
+	if err != nil {
+		log.Fatalf("could not parse ~/.sira.toml file: %v", err)
 	}
+
+	mainArg := os.Args[len(os.Args)-1]
+	if mainArg == "help" {
+		fmt.Println("Usage: sira <filename>")
+		return
+	}
+
+	filename := mainArg
+
+	messages, err := parseMessagesFromFile(filename)
+	handleMainErr(err)
+
+	newMessage, err := execPrompt(params, messages)
+	handleMainErr(err)
+
+	err = appendMessage(filename, *newMessage)
+	handleMainErr(err)
 }

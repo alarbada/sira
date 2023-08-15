@@ -6,15 +6,25 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/sashabaranov/go-openai"
 )
 
 type ParamsFile struct {
+	Apikey string
+
 	Params map[string]any
-	OpenAI struct {
-		Model       string
-		MaxTokens   int
-		Temperature float32
+	OpenAI openai.ChatCompletionRequest
+}
+
+func parseParamsFile() (*ParamsFile, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
 	}
+
+	var params ParamsFile
+	_, err = toml.DecodeFile(home+"/.sira.toml", &params)
+	return &params, err
 }
 
 func stringMatches(index int, substr, content string) bool {
@@ -28,10 +38,10 @@ func stringMatches(index int, substr, content string) bool {
 type TokenKind string
 
 const (
-	TokenKind_System     TokenKind = "# system"
-	TokenKind_Assistant  TokenKind = "# assistant"
-	TokenKind_User       TokenKind = "# user"
-	TokenKind_Comment    TokenKind = ">>>"
+	TokenKind_System    TokenKind = "# system"
+	TokenKind_Assistant TokenKind = "# assistant"
+	TokenKind_User      TokenKind = "# user"
+	TokenKind_Comment   TokenKind = ">>>"
 )
 
 func (this TokenKind) ToRole() string {
@@ -109,7 +119,7 @@ func parseTemplate(template string, params map[string]any) ([]Message, error) {
 	template = strings.Join(withoutComments, "\n")
 
 	for k, v := range params {
-		if strings.Index(template, "{"+k+"}") == -1 {
+		if !strings.Contains(template, "{"+k+"}") {
 			return nil, fmt.Errorf("Could not find parameter \"%s\" in template", k)
 		}
 
@@ -145,45 +155,11 @@ func parseTemplate(template string, params map[string]any) ([]Message, error) {
 	return messages, nil
 }
 
-func parseMessages(foldername string) (*ParamsFile, []Message, error) {
-	dir, err := os.ReadDir(foldername)
+func parseMessagesFromFile(filename string) ([]Message, error) {
+	f, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	var params ParamsFile
-	var foundParams bool
-	var templateFile string
-	var foundTemplate bool
-	for _, file := range dir {
-		if file.Name() == "params.toml" {
-			_, err := toml.DecodeFile(foldername+"/"+file.Name(), &params)
-			if err != nil {
-				return nil, nil, err
-			}
-			foundParams = true
-		} else if file.Name() == "template.md" {
-			f, err := os.ReadFile(foldername + "/" + file.Name())
-			if err != nil {
-				return nil, nil, err
-			}
-			templateFile = string(f)
-			foundTemplate = true
-		}
-	}
-
-	if !foundParams {
-		return nil, nil, fmt.Errorf("params.toml not found")
-	}
-	if !foundTemplate {
-		return nil, nil, fmt.Errorf("template.md not found")
-	}
-
-	messages, err := parseTemplate(templateFile, params.Params)
-	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to parse template: %w", err)
-	}
-
-	return &params, messages, nil
+	return parseTemplate(string(f), nil)
 }
-

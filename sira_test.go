@@ -6,14 +6,12 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// TODO: This doesn't pass yet, make it so
-
 func TestParseMessages(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
-		messages, err := parseTemplate(`[assistant]
+		messages, err := parseTemplate(`# assistant
 Write a haiku about your favorite food.
 
-[user]
+# user
 wow that's lol`, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -63,16 +61,16 @@ xxx is a xxx
 		- 2023, Copilot`
 
 		template := `
-[system]
+# system
 ` + system + `
 
-[assistant]
+# assistant
 ` + assistant1 + `
 
-[user]
+# user
 ` + user + `
 
-[assistant]
+# assistant
 ` + assistant2
 
 		params := map[string]any{
