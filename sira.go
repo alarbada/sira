@@ -16,6 +16,9 @@ type Message = openai.ChatCompletionMessage
 func execPrompt(params *ParamsFile, messages []Message) (*Message, error) {
 	client := openai.NewClient(params.Apikey)
 
+	// not the best, but works for now
+	params.OpenAI.Messages = messages
+
 	stream, err := client.CreateChatCompletionStream(context.Background(), params.OpenAI)
 	if err != nil {
 		return nil, err
