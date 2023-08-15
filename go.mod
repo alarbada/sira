@@ -1,4 +1,4 @@
-module sira
+module github.com/alarbada/sira
 
 go 1.20
 
