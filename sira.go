@@ -13,13 +13,10 @@ import (
 
 type Message = openai.ChatCompletionMessage
 
-func execPrompt(params *ParamsFile, messages []Message) (*Message, error) {
-	client := openai.NewClient(params.Apikey)
+func execPrompt(apiKey string, req *openai.ChatCompletionRequest, messages []Message) (*Message, error) {
+	client := openai.NewClient(apiKey)
 
-	// not the best, but works for now
-	params.OpenAI.Messages = messages
-
-	stream, err := client.CreateChatCompletionStream(context.Background(), params.OpenAI)
+	stream, err := client.CreateChatCompletionStream(context.Background(), *req)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +93,7 @@ max_tokens = 500
 	return os.WriteFile(dir+"/template.md", []byte(TokenKind_System), 0644)
 }
 
-func handleMainErr(err error) {
+func assertErr(err error) {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -106,25 +103,34 @@ func main() {
 	// disable date on log
 	log.SetFlags(0)
 
-	params, err := parseParamsFile()
-	if err != nil {
-		log.Fatalf("could not parse ~/.sira.toml file: %v", err)
-	}
-
 	mainArg := os.Args[len(os.Args)-1]
 	if mainArg == "help" {
 		fmt.Println("Usage: sira <filename>")
 		return
 	}
 
+	configContents, err := readConfig()
+	if err != nil {
+		log.Fatalf("could not read ~/.sira.toml file: %v", err)
+	}
+
+
+	config, err := parseConfig(configContents)
+	if err != nil {
+		log.Fatalf("could not parse ~/.sira.toml file: %v", err)
+	}
+
+	request, err := config.toRequest()
+	assertErr(err)
+
 	filename := mainArg
 
 	messages, err := parseMessagesFromFile(filename)
-	handleMainErr(err)
+	assertErr(err)
 
-	newMessage, err := execPrompt(params, messages)
-	handleMainErr(err)
+	newMessage, err := execPrompt(config.Apikey, request, messages)
+	assertErr(err)
 
 	err = appendMessage(filename, *newMessage)
-	handleMainErr(err)
+	assertErr(err)
 }

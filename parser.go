@@ -6,25 +6,46 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/mitchellh/mapstructure"
 	"github.com/sashabaranov/go-openai"
 )
 
-type ParamsFile struct {
-	Apikey string
-
-	Params map[string]any
-	OpenAI openai.ChatCompletionRequest
-}
-
-func parseParamsFile() (*ParamsFile, error) {
+func readConfig() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	var params ParamsFile
-	_, err = toml.DecodeFile(home+"/.sira.toml", &params)
-	return &params, err
+	bs, err := os.ReadFile(home + "/.sira.toml")
+	return string(bs), err
+}
+
+type configFile struct {
+	Apikey string
+
+	OpenAI map[string]any
+}
+
+func parseConfig(contents string) (*configFile, error) {
+	params := new(configFile)
+	_, err := toml.Decode(contents, params)
+	return params, err
+}
+
+func (file *configFile) toRequest() (*openai.ChatCompletionRequest, error) {
+	unparsedConfig := file.OpenAI
+	parsedConfig := new(openai.ChatCompletionRequest)
+
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:  parsedConfig,
+		TagName: "json",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Could not create decoder: %w", err)
+	}
+
+	err = decoder.Decode(unparsedConfig)
+	return parsedConfig, err
 }
 
 func stringMatches(index int, substr, content string) bool {
