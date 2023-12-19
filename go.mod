@@ -3,8 +3,8 @@ module github.com/alarbada/sira
 go 1.20
 
 require (
-	github.com/BurntSushi/toml v1.2.1
-	github.com/sashabaranov/go-openai v1.9.5
+	github.com/BurntSushi/toml v1.3.2
+	github.com/sashabaranov/go-openai v1.17.9
 )
 
 require (
