@@ -118,9 +118,9 @@ xxx is a xxx
 	})
 }
 
-
 func TestConfigFileParsing(t *testing.T) {
-	config, err := parseConfig(`
+	{ // use openai
+		config, err := parseConfig(`
 apikey = 'sk-1234567890'
 
 [openai]
@@ -130,17 +130,45 @@ temperature = 0.7
 top_p = 1
 
 	`)
-	assert.NoError(t, err)
+		assert.NoError(t, err)
 
-	assert.Equal(t, "sk-1234567890", config.Apikey)
+		assert.Equal(t, "sk-1234567890", config.Apikey)
 
-	request, err := config.toRequest()
-	assert.NoError(t, err)
+		request, err := config.toOpenAIRequest()
+		assert.NoError(t, err)
 
-	assert.Equal(t, "gpt-3.5-turbo", request.Model)
-	assert.Equal(t, 4000, request.MaxTokens)
+		assert.Equal(t, "gpt-3.5-turbo", request.Model)
+		assert.Equal(t, 4000, request.MaxTokens)
 
-	var temp, topP float32 = 0.7, 1.0
-	assert.Equal(t, temp, request.Temperature)
-	assert.Equal(t, topP, request.TopP)
+		var temp, topP float32 = 0.7, 1.0
+		assert.Equal(t, temp, request.Temperature)
+		assert.Equal(t, topP, request.TopP)
+	}
+
+
+	{ // use mistral
+		config, err := parseConfig(`
+apikey = 'sk-1234567890'
+
+[mistral]
+model = 'mistral-tiny'
+max_tokens = 4000
+temperature = 0.7
+top_p = 1
+
+	`)
+		assert.NoError(t, err)
+
+		assert.Equal(t, "sk-1234567890", config.Apikey)
+
+		request, err := config.toMistralRequest()
+		assert.NoError(t, err)
+
+		assert.Equal(t, "mistral-tiny", request.Model)
+		assert.Equal(t, 4000, *request.MaxTokens)
+
+		var temp, topP float32 = 0.7, 1.0
+		assert.Equal(t, temp, *request.Temperature)
+		assert.Equal(t, topP, *request.TopP)
+	}
 }

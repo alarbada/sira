@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/alarbada/sira/mistral"
 	"github.com/mitchellh/mapstructure"
 	"github.com/sashabaranov/go-openai"
 )
@@ -34,21 +38,51 @@ func main() {
 		log.Fatalf("could not parse ~/.sira.toml file: %v", err)
 	}
 
-	request, err := config.toRequest()
-	assertErr(err)
+	if config.OpenAI != nil {
+		request, err := config.toOpenAIRequest()
+		assertErr(err)
 
-	filename := mainArg
+		filename := mainArg
 
-	messages, err := parseMessagesFromFile(filename)
-	assertErr(err)
+		messages, err := parseMessagesFromFile(filename)
+		assertErr(err)
 
-	request.Messages = messages
+		request.Messages = messages
 
-	newMessage, err := execPrompt(config.Apikey, request)
-	assertErr(err)
+		newMessage, err := execOpenAIPrompt(config.Apikey, request)
+		assertErr(err)
 
-	err = appendMessage(filename, *newMessage)
-	assertErr(err)
+		err = appendMessage(filename, *newMessage)
+		assertErr(err)
+	} else if config.Mistral != nil {
+		request, err := config.toMistralRequest()
+		assertErr(err)
+
+		filename := mainArg
+
+		messages, err := parseMessagesFromFile(filename)
+		assertErr(err)
+
+		type Msg struct {
+			Content *string                                    `json:"content,omitempty"`
+			Role    *mistral.ChatCompletionRequestMessagesRole `json:"role,omitempty"`
+		}
+
+		for _, msg := range messages {
+			role := mistral.ChatCompletionRequestMessagesRole(msg.Role)
+			content := msg.Content
+			request.Messages = append(request.Messages, Msg{
+				Content: &content,
+				Role:    &role,
+			})
+		}
+
+		newMessage, err := execMistralPrompt(config.Apikey, *request)
+		assertErr(err)
+
+		err = appendMessage(filename, *newMessage)
+		assertErr(err)
+	}
 }
 
 func assertErr(err error) {
@@ -59,7 +93,7 @@ func assertErr(err error) {
 
 type Message = openai.ChatCompletionMessage
 
-func execPrompt(apiKey string, req *openai.ChatCompletionRequest) (*Message, error) {
+func execOpenAIPrompt(apiKey string, req *openai.ChatCompletionRequest) (*Message, error) {
 	client := openai.NewClient(apiKey)
 
 	stream, err := client.CreateChatCompletionStream(context.Background(), *req)
@@ -78,6 +112,75 @@ func execPrompt(apiKey string, req *openai.ChatCompletionRequest) (*Message, err
 			break
 		} else if err != nil {
 			return nil, err
+		}
+
+		newMessage.Content += resp.Choices[0].Delta.Content
+		fmt.Printf("%s", resp.Choices[0].Delta.Content)
+	}
+
+	return &newMessage, nil
+}
+
+func execMistralPrompt(apiKey string, req mistral.ChatCompletionRequest) (*Message, error) {
+	client, err := mistral.NewClientWithResponses(
+		"https://api.mistral.ai/v1",
+		mistral.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+			return nil
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Could not create mistral client: %w", err)
+	}
+
+	ctx := context.Background()
+	res, err := client.CreateChatCompletion(ctx, req)
+	if err != nil {
+		panic(err)
+	}
+	defer res.Body.Close()
+
+	var newMessage Message
+	newMessage.Role = "assistant"
+
+	reader := bufio.NewReader(res.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break // End of stream
+			}
+			fmt.Println("Error reading stream:", err)
+			break
+		}
+		line = strings.TrimSpace(line)
+		if len(line) < len("data: ") {
+			continue // Ignore lines that are too short
+		} else if line == "data: [DONE]" {
+			break // End of stream
+		}
+
+		line = line[len("data: "):] // Remove the "data: " prefix
+
+		var resp struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			Created int    `json:"created"`
+			Model   string `json:"model"`
+			Choices []struct {
+				Index int `json:"index"`
+				Delta struct {
+					Role    *string `json:"role"`
+					Content string  `json:"content"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+		}
+
+		if err := json.Unmarshal([]byte(line), &resp); err != nil {
+			fmt.Println("Error unmarshalling JSON:", err)
+			fmt.Println("tried to parse line:", line)
+			break
 		}
 
 		newMessage.Content += resp.Choices[0].Delta.Content
@@ -150,8 +253,9 @@ func readConfig() (string, error) {
 }
 
 type configFile struct {
-	Apikey string
-	OpenAI map[string]any
+	Apikey  string
+	OpenAI  map[string]any
+	Mistral map[string]any
 }
 
 func parseConfig(contents string) (*configFile, error) {
@@ -160,7 +264,7 @@ func parseConfig(contents string) (*configFile, error) {
 	return params, err
 }
 
-func (file *configFile) toRequest() (*openai.ChatCompletionRequest, error) {
+func (file *configFile) toOpenAIRequest() (*openai.ChatCompletionRequest, error) {
 	unparsedConfig := file.OpenAI
 	parsedConfig := new(openai.ChatCompletionRequest)
 
@@ -174,6 +278,57 @@ func (file *configFile) toRequest() (*openai.ChatCompletionRequest, error) {
 
 	err = decoder.Decode(unparsedConfig)
 	return parsedConfig, err
+}
+
+func (file *configFile) toMistralRequest() (*mistral.ChatCompletionRequest, error) {
+	unparsedConfig := file.Mistral
+	parsedConfig := new(mistral.ChatCompletionRequest)
+
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:  parsedConfig,
+		TagName: "json",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Could not create decoder: %w", err)
+	}
+
+	err = decoder.Decode(unparsedConfig)
+	if err != nil {
+		return nil, fmt.Errorf("Could not decode config: %w", err)
+	}
+
+	if parsedConfig.TopP == nil {
+		var topP float32 = 1.0
+		parsedConfig.TopP = &topP
+	}
+
+	if parsedConfig.MaxTokens == nil {
+		var maxTokens int = 1000
+		parsedConfig.MaxTokens = &maxTokens
+	}
+	if parsedConfig.Temperature == nil {
+		var temperature float32 = 0.7
+		parsedConfig.Temperature = &temperature
+	}
+
+	stream := true
+	parsedConfig.Stream = &stream
+
+	if parsedConfig.SafeMode == nil {
+		safeMode := true
+		parsedConfig.SafeMode = &safeMode
+	}
+
+	if parsedConfig.RandomSeed == nil {
+		var randomSeed int = 0
+		parsedConfig.RandomSeed = &randomSeed
+	}
+
+	if parsedConfig.Model == "" {
+		panic("model is required")
+	}
+
+	return parsedConfig, nil
 }
 
 func stringMatches(index int, substr, content string) bool {
