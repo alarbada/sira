@@ -47,6 +47,20 @@ func main() {
 		messages, err := parseMessagesFromFile(filename)
 		assertErr(err)
 
+		// force getting only the latest 5 messages + the first system message,
+		// otherwise it is easy to consume lots of tokens.
+		// TODO: This is hardcoded, should be configurable
+		if len(messages) > 5 {
+			newMessages := messages[len(messages)-5:]
+
+			firstMessage := messages[0]
+			if firstMessage.Role == "system" {
+				newMessages = append([]Message{firstMessage}, newMessages...)
+			}
+
+			messages = newMessages
+		}
+
 		request.Messages = messages
 
 		newMessage, err := execOpenAIPrompt(config.Apikey, request)
@@ -303,7 +317,7 @@ func (file *configFile) toMistralRequest() (*mistral.ChatCompletionRequest, erro
 	}
 
 	if parsedConfig.MaxTokens == nil {
-		var maxTokens int = 1000
+		var maxTokens int = 1500
 		parsedConfig.MaxTokens = &maxTokens
 	}
 	if parsedConfig.Temperature == nil {
